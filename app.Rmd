@@ -1,0 +1,123 @@
+---
+title: "Examining Dangerous Spots for Pedestrians near Schools"
+output: 
+  flexdashboard::flex_dashboard:
+    theme: spacelab
+    source_code: embed
+    vertical_layout: scroll
+    orientation: rows
+runtime: shiny
+---
+
+```{r setup, include=FALSE}
+library(shiny)
+library(flexdashboard)
+library(ggplot2)
+library(DT)
+library(stringr)
+library(dplyr)
+library(tools)
+library(plotly)
+library(rsconnect)
+library(rgdal)
+library(leaflet)
+library(leaflet.extras)
+library(sp)
+library(rgdal)
+library(rgeos)
+library(htmltools)
+
+# Load crash file
+crash <- read.csv(file = "AC_Major_Crashes_Filtered.csv")
+
+# Load schools file
+schools <- read.csv(file = "pps_schoolsapr2019publish.csv")
+
+# Subset schools file
+schools_subset <- subset (schools, select = c(name, latitude, longitude))
+
+```
+Inputs {.sidebar}
+-----------------------------------------------------------------------
+```{r sidebar}
+# User selects which year to graph-------------------------------------------
+sliderInput("year", "Year(s)",
+            min = (2010), max = (2019),
+            value = c(2019), sep = ""
+            )
+
+# Download data button
+downloadButton("downloadData", "Download")
+
+```
+Outputs
+
+
+Row {data-height=175}
+-----------------------------------------------------------------------
+### Introduction
+
+This dashboard displays crashes in the 10-year period 2010-2019 that resulted in the death or major injury of a pedestrian. School locations are shown to highlight those spots where children are likely to be walking.
+
+Row {data-height=150}
+-----------------------------------------------------------------------
+### TITLE HERE XX
+
+```{r title XX}
+
+```
+
+```{r subset }
+# Subset crash data based on year input
+crash_subset <- reactive({
+  subset (crash, Year == input$year, PED_DEATH_COUNT == 1 | PED_MAJ_INJ_COUNT == 1, 
+                        select = c(CRASH_YEAR, TIME_OF_DAY, PED_DEATH_COUNT,PED_MAJ_INJ_COUNT, DEC_LAT, DEC_LONG))
+})
+
+```
+
+### Map
+
+```{r map}
+# Set palette for lethal vs. non-lethal crashes
+palcrashes <- colorFactor(c("blue", "red"), levels = unique(crash_subset$PED_DEATH_COUNT))
+
+# Set icon for schools
+schoolIcon <- makeIcon(
+  iconUrl = "https://i.pinimg.com/originals/b1/b7/de/b1b7de37299d6d589ba3d7e28652869b.png",
+  iconWidth = 25, iconHeight = 25,
+  iconAnchorX = 22, iconAnchorY = 94)
+
+# Test simple map
+leaflet() %>%
+  addProviderTiles("OpenStreetMap.Mapnik", options = leafletOptions(minZoom = 5, maxZoom = 18)) %>%
+  addCircles(data = crash_subset, lat = crash_subset$DEC_LAT, lng = crash_subset$DEC_LONG, color = ~palcrashes(crash_subset$PED_DEATH_COUNT), group = "Crashes", popup = paste("Year: ", crash_subset$CRASH_YEAR, "<br>", "Ped Death Count: ", crash_subset$PED_DEATH_COUNT, "<br>", "Ped Major Injury Count: ", crash_subset$PED_MAJ_INJ_COUNT)) %>%
+  addMarkers(data = schools_subset, icon = schoolIcon, group = "Schools", popup = schools_subset$name) %>%
+  addLayersControl(
+   overlayGroups = c("Crashes","Schools"),
+    options = layersControlOptions(collapsed = FALSE)) %>%
+  addLegend(position = "topleft", pal = palcrashes, values = crash_subset$PED_DEATH_COUNT,
+            title = "Consequence of Crash",
+            opacity = 1)
+```
+
+### Data Table
+
+```{r datatable}
+# Create data table corresponding to selected data
+table <- renderDataTable(crash_subset(), options = list(pageLength = 10, autoWidth = TRUE, columnDefs = list(list(width = "8px", targets = "all"()))), 
+                    rownames = FALSE)
+
+table
+```
+
+###Download Handler
+
+```{r downloadhandler}
+downloadHandler(
+  filename = function() {
+    paste("crashdata-", Sys.Date(),".csv",sep="")
+  }.
+  content = function(file {
+    write.csv(crash_subset(),file)
+  })
