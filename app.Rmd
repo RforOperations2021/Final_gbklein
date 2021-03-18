@@ -84,7 +84,7 @@ crash_subset <- reactive({
 ### Map
 
 ```{r map}
-# Set palette for lethal vs. non-lethal crashes
+#  Set palette for lethal vs. non-lethal crashes
 factor_ped_death_count <- factor(crash_subset$PED_DEATH_COUNT)
 palcrashes <- colorFactor(c("blue", "red"), levels = unique(factor_ped_death_count))
 #binpal <- colorBin("Blues", crash_subset$PED_DEATH_COUNT, 2, pretty = FALSE)
