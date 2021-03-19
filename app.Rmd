@@ -9,7 +9,7 @@ output:
 runtime: shiny
 ---
 
-```{r setup, include=FALSE}
+```{r, setup, include=FALSE}
 library(shiny)
 library(flexdashboard)
 library(ggplot2)
@@ -28,19 +28,19 @@ library(rgeos)
 library(htmltools)
 library(RColorBrewer)
 
-# Load crash file
+# Load crash location file
 crash <- read.csv(file = "AC_Major_Crashes_Filtered.csv")
 
-# Load schools file
+# Load school location file
 schools <- read.csv(file = "pps_schoolsapr2019publish.csv")
 
-# Subset schools file
+# Subset school file
 schools_subset <- subset (schools, select = c(name, latitude, longitude))
 
 ```
 Inputs {.sidebar}
 -----------------------------------------------------------------------
-```{r sidebar}
+```{r, sidebar}
 # User selects which year to graph-------------------------------------------
 sliderInput("year", "Year(s)",
             min = (2010), max = (2019),
@@ -53,43 +53,28 @@ downloadButton("downloadData", "Download")
 ```
 Outputs
 
-
-Row {data-height=100}
------------------------------------------------------------------------
-### Title
-
-Examining Dangerous Spots for Pedestrians near Schools
-
-
 Row {data-height=150}
 -----------------------------------------------------------------------
 ### Introduction
 
-This dashboard displays crashes in the 10-year period 2010-2019 that resulted in the death or major injury of a pedestrian. School locations are shown to highlight those spots where children are likely to be walking.
+This dashboard displays crashes in Allegheny County in the 10-year period 2010-2019 that resulted in a pedestrian's death or major injury. Schools are shown to highlight those spots where children are likely to be walking.
 
 
-Row {data-height=150}
+Row {data-height=650, .tabset}
 -----------------------------------------------------------------------
-### Subset Data
+### Subset Crash Data
 
-```{r subset data }
+```{r, map }
 # Subset crash data based on year input
 crash_subset <- reactive({
-  subset(crash, Year == input$year, PED_DEATH_COUNT == 1 | PED_MAJ_INJ_COUNT == 1, 
-                        select = c(CRASH_YEAR, TIME_OF_DAY, PED_DEATH_COUNT,PED_MAJ_INJ_COUNT, DEC_LAT, DEC_LONG, ALCOHOL_RELATED,CELL_PHONE, SPEEDING_RELATED, FATIGUE_ASLEEP, DISTRACTED, DEER_RELATED, DRUG_RELATED))
+  crash %>%
+    filter(
+      CRASH_YEAR %in% input$year, 
+      PED_DEATH_COUNT == 1 | PED_MAJ_INJ_COUNT == 1
+    )
 })
 
-```
-
-### Map
-
-```{r map}
-#  Set palette for lethal vs. non-lethal crashes
-factor_ped_death_count <- factor(crash_subset$PED_DEATH_COUNT)
-palcrashes <- colorFactor(c("blue", "red"), levels = unique(factor_ped_death_count))
-#binpal <- colorBin("Blues", crash_subset$PED_DEATH_COUNT, 2, pretty = FALSE)
-
-# Set icon for schools
+# Create icon for schools
 schoolIcon <- makeIcon(
   iconUrl = "https://i.pinimg.com/originals/b1/b7/de/b1b7de37299d6d589ba3d7e28652869b.png",
   iconWidth = 25, iconHeight = 25,
@@ -101,36 +86,50 @@ map <- renderLeaflet({
     addProviderTiles("OpenStreetMap.Mapnik", options = leafletOptions(minZoom = 5, maxZoom = 18)) 
   })
 
-# Add school and crash layers to basemap
+# Set color palette based on death
 observe({
+  factor_ped_death_count <- factor(crash_subset()$PED_DEATH_COUNT) 
+  binpal <- colorBin("Blues", factor_ped_death_count, 2, pretty = FALSE)
+  
+# Add crash and school layers to map
 leafletProxy("map") %>% 
-  addCircles(data = crash_subset, lat = crash_subset$DEC_LAT, lng = crash_subset$DEC_LONG, color = ~palcrashes(crash_subset$PED_DEATH_COUNT), group = "Crashes", popup = paste("Year: ", crash_subset$CRASH_YEAR, "<br>", "Ped Death Count: ", crash_subset$PED_DEATH_COUNT, "<br>", "Ped Major Injury Count: ", crash_subset$PED_MAJ_INJ_COUNT)) %>%
+  addCircles(data = crash_subset(), lat = crash_subset()$DEC_LAT, lng = crash_subset()$DEC_LONG, color =
+               ~binpal(factor_ped_death_count), group = "Crashes", popup = paste("Year: ",
+                                                                                 crash_subset()$CRASH_YEAR, "<br>",
+                                                                                 "Ped Death Count: ",
+                                                                                 crash_subset()$PED_DEATH_COUNT,
+                                                                                 "<br>", "Ped Major Injury Count: ",
+                                                                                 crash_subset()$PED_MAJ_INJ_COUNT)) %>%
   addMarkers(data = schools_subset, icon = schoolIcon, group = "Schools", popup = schools_subset$name) %>%
-  addLayersControl(
+  addLayersControl( # Add group controls
    overlayGroups = c("Crashes","Schools"),
     options = layersControlOptions(collapsed = FALSE)) %>%
-  addLegend(position = "topleft", pal = palcrashes, values = crash_subset$PED_DEATH_COUNT,
+  addLegend(position = "topleft", pal = palcrashes, values = crash_subset()$PED_DEATH_COUNT, # Add legend
             title = "Consequence of Crash",
             opacity = 1)
 })
 ```
------------------------------------------------------------------------
+
 ### Chart 1: Collision Causes
 
-```{r plot}
+```{r, collision causes plot}
+
 # Find counts of collision causes
-alcohol <- sum(crash_subset$ALCOHOL_RELATED)
-cellphone <- sum(crash_subset$CELL_PHONE)
-speeding <- sum(crash_subset$SPEEDING_RELATED)
-fatigue <- sum(crash_subset$FATIGUE_ASLEEP)
-drugs <- sum(crash_subset$DRUG_RELATED)
+observe({
+alcohol <- sum(crash_subset()$ALCOHOL_RELATED)
+cellphone <- sum(crash_subset()$CELL_PHONE)
+speeding <- sum(crash_subset()$SPEEDING_RELATED)
+fatigue <- sum(crash_subset()$FATIGUE_ASLEEP)
+drugs <- sum(crash_subset()$DRUG_RELATED)
 
 reason <- c("Alcohol","Cellphone","Speeding", "Fatigue", "Drugs")
-count <- c(alcohol,cellphone, speeding, fatigue, drugs)
+count <- c(alcohol, cellphone, speeding, fatigue, drugs) 
 
+# Create data frame of collision causes
 causedf <- data.frame(reason, count)
+})
 
-### Create lollipop graph of collision causes
+# Create lollipop graph of collision causes
 renderPlotly({
     (ggplotly(ggplot(causedf, aes(x = reason, y = count)) +
                geom_point(size = 3)+
@@ -141,12 +140,31 @@ renderPlotly({
                labs(title = "Common Causes of Crashes Involving Pedestrians",
                     subtitle = "from subsetted data")
     )})
+```
+
+### Chart 2: Hours of Crashes
+
+```{r, hours of crashes plot}
+
+# Create tibble of tallies of crashes per hour in the day
+observe({
+  hour_tallies <- crash_subset %>% count(HOUR_OF_DAY, name = "n_hour_of_day") })
+
+# Create barchart from tibble
+renderPlotly({
+    (ggplot(hour_tallies, aes(x = HOUR_OF_DAY, y = n_hour_of_day)) +
+            geom_bar(fill = "blue") +
+            labs(y = "Count",
+                 x =  "Hour of Day",
+                 title = "The Distribution of Job Reallocation Rates across the States, 2004-2018"
+                )
+    )})
 
 ```
 
 ### Data Table
 
-```{r data table}
+```{r, data table}
 # Create data table corresponding to selected data
 table <- renderDataTable(crash_subset(), options = list(pageLength = 10, autoWidth = TRUE, columnDefs = list(list(width = "8px", targets = "all"()))), 
                     rownames = FALSE)
@@ -154,13 +172,13 @@ table <- renderDataTable(crash_subset(), options = list(pageLength = 10, autoWid
 table
 ```
 
-###Download Handler
+### Download Handler
 
-```{r downloadhandler}
+```{r, downloadhandler}
 downloadHandler(
   filename = function() {
     paste("crashdata-", Sys.Date(),".csv",sep="")
-  }.
+  }
   content = function(file {
     write.csv(crash_subset(),file)
   })
